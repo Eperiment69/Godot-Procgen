@@ -1,0 +1,142 @@
+extends Node2D
+
+const MAP_SIZE = Vector2(16, 16)
+const ROOM_SIZE = Vector2(500, 500)
+var dungeon_map = []  # 2D array to store the dungeon map
+var mst_edges = []  # List to store the MST edges
+var rooms: Array = []
+var walls: Array = []
+var Room_ = preload("res://Scenes/room.tscn")
+var num_rooms = 50
+var min_size = 8
+var max_size = 14
+var tile_size = 16
+var min_area = 2000
+var grid_size = 16
+var grid = []
+
+
+func _ready():
+	# Generate rooms
+	make_rooms()
+
+	# Generate walls
+	
+	# Create MST
+	create_mst()
+
+
+func make_rooms():
+
+		for i in range(num_rooms):
+			var pos = Vector2(0, 0)
+			var r = Room_.instantiate()
+			var w = min_size + randi() % (max_size - min_size)
+			var h = min_size + randi() % (max_size - min_size)
+			r.make_room(pos, Vector2(w, h) * tile_size)
+			$Rooms.add_child(r)
+		
+		for room in $Rooms.get_children():
+			print((room.size.x * room.size.y)/16)
+		
+		await  get_tree().create_timer(1.1).timeout
+		
+		for room in $Rooms.get_children():
+			if (room.size.x * room.size.y)/16 <= min_area:
+				room.queue_free()
+			else:
+				room.freeze
+				
+func create_mst():
+	var rooms = $Rooms.get_children()
+	var num_rooms = rooms.size()
+	var visited = []  # List to track visited rooms
+	mst_edges = []  # List to store the MST edges
+
+	# Initialize visited list
+	for i in range(num_rooms):
+		visited.append(false)
+
+	# Select a random starting room
+	var start_room = rooms[randi() % num_rooms]
+	visited[rooms.find(start_room)] = true
+
+	# Repeat until all rooms are visited
+	while visited.count(false) > 0:
+		var min_dist = INF
+		var selected_room = null
+		var selected_neighbor = null
+
+		# Find the nearest unvisited neighbor for a visited room
+		for room in rooms:
+			if visited[rooms.find(room)]:
+				var neighbors = get_unvisited_neighbors(room, rooms, visited)
+				if neighbors.size() == 0:
+					continue
+				
+				# Calculate the probability factor
+				var probability = 0.2  # Adjust this value to control the probability of choosing the nearest neighbor
+				var choose_nearest = randf() < probability
+				
+				if choose_nearest:
+					# Select the nearest neighbor
+					for neighbor in neighbors:
+						var dist = room.position.distance_to(neighbor.position)
+						if dist < min_dist:
+							min_dist = dist
+							selected_room = room
+							selected_neighbor = neighbor
+				else:
+					# Select a neighbor randomly
+					selected_neighbor = neighbors[randi() % neighbors.size()]
+					min_dist = room.position.distance_to(selected_neighbor.position)
+					selected_room = room
+
+		# Add the selected edge to the MST
+		if selected_room != null and selected_neighbor != null:
+			mst_edges.append([rooms.find(selected_room), rooms.find(selected_neighbor)])
+			visited[rooms.find(selected_neighbor)] = true
+
+func get_unvisited_neighbors(room, rooms, visited):
+	var neighbors = []
+	for other_room in rooms:
+		if other_room != room and !visited[rooms.find(other_room)]:
+			neighbors.append(other_room)
+	return neighbors
+
+
+func _input(event):
+	if Input.is_action_just_pressed("ui_accept"):
+		for n in $Rooms.get_children():
+			n.queue_free()
+		mst_edges.clear()
+		make_rooms()
+
+func _draw():
+	# Draw rooms
+	for room in $Rooms.get_children():
+		draw_rect(Rect2(room.position, room.size), Color(0, 1, 0), false)
+	
+	
+	await get_tree().create_timer(2).timeout
+	# Draw MST edges
+	for edge in mst_edges:
+		var room1 = $Rooms.get_child(edge[0])
+		var room2 = $Rooms.get_child(edge[1])
+
+		if room1 and room2:
+			var room1_instance = room1.get_node("room")
+			var room2_instance = room2.get_node("room")
+
+			if room1_instance and room2_instance:
+				# Calculate the center positions of the two rooms
+				var room1_center = room1_instance.position + room1_instance.size / 2
+				var room2_center = room2_instance.position + room2_instance.size / 2
+
+				# Draw a line between the centers of the two rooms
+				draw_line(room1_center, room2_center, Color(1, 0, 0), 2)
+
+
+	# Update the screen
+func _process(delta):
+	queue_redraw()
