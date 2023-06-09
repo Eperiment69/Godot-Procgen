@@ -1,0 +1,58 @@
+extends Node2D
+
+var Room = preload("res://Scenes/room.tscn")
+var num_rooms = 50
+var min_size = 10
+var max_size = 30
+var tile_size = 16
+var min_area = 60
+var rooms : Array
+
+
+func _ready():
+	# Generate rooms
+	make_rooms()
+
+	# Generate walls
+	
+	# Create MST
+
+
+func make_rooms():
+
+		for i in range(num_rooms):
+			var pos = Vector2(0, 0)
+			var r = Room.instantiate()
+			var w = min_size + randi() % (max_size - min_size)
+			var h = min_size + randi() % (max_size - min_size)
+			r.make_room(pos, Vector2(w, h) * tile_size)
+			$Rooms.add_child(r)
+			rooms.append(r)
+
+
+		
+		await  get_tree().create_timer(1.1).timeout
+		
+		for room in rooms:
+			if (room.size.x * room.size.y)/16 <= min_area:
+				rooms.erase(room)
+				room.queue_free()
+			else:
+				room.freeze
+
+func _input(event):
+	if Input.is_action_just_pressed("ui_accept"):
+		for n in rooms:
+			n.queue_free()
+		rooms.clear()
+		make_rooms()
+		
+
+func _draw():
+	# Draw rooms
+	for room in rooms:
+		draw_rect(Rect2(room.position, room.size), Color(0, 1, 0), false)
+
+# Update the screen
+func _process(delta):
+	queue_redraw()
