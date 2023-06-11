@@ -1,0 +1,93 @@
+extends Node2D
+
+const TILE_SIZE = Vector2(32, 32)
+const ROOM_SIZE_MIN = Vector2(20, 20)
+const ROOM_SIZE_MAX = Vector2(40, 40)
+const MAX_ROOMS = 10
+const MIN_ROOM_DISTANCE = 20  # Minimum distance between rooms
+const BORDER_SIZE = 200
+
+var dungeon_map = []
+var room_list = []
+
+func _ready():
+	generate_dungeon()
+
+func generate_dungeon():
+	# Initialize the dungeon map with walls
+	for x in range(0, BORDER_SIZE):
+		var column = []
+		for y in range(0, BORDER_SIZE):
+			column.append(1)  # 1 represents walls
+		dungeon_map.append(column)
+
+	# Generate rooms
+	var num_rooms = 0
+	while num_rooms < MAX_ROOMS:
+		var room_size = Vector2(rand_range(ROOM_SIZE_MIN.x, ROOM_SIZE_MAX.x), rand_range(ROOM_SIZE_MIN.y, ROOM_SIZE_MAX.y))
+		var room_position = Vector2(rand_range(1, BORDER_SIZE - room_size.x - 1), rand_range(1, BORDER_SIZE - room_size.y - 1))
+		var new_room = Rect2(room_position, room_size)
+		
+
+		var intersects = false
+		for room in room_list:
+			if new_room.intersects(room) or is_too_close(new_room, room):
+				intersects = true
+				break
+
+		if not intersects:
+			create_room(new_room)
+			room_list.append(new_room)
+			num_rooms += 1
+
+	# Connect the rooms
+	for i in range(0, len(room_list) - 1):
+		var room1 = room_list[i]
+		var room2 = room_list[i + 1]
+		connect_rooms(room1, room2)
+
+	# Redraw the generated dungeon
+	queue_redraw()
+
+func create_room(room: Rect2):
+	for x in range(room.position.x, room.position.x + room.size.x):
+		for y in range(room.position.y, room.position.y + room.size.y):
+			if x >= 0 and x < len(dungeon_map) and y >= 0 and y < len(dungeon_map[x]):
+				dungeon_map[x][y] = 0  # 0 represents floor
+
+func connect_rooms(room1: Rect2, room2: Rect2):
+	var point1 = Vector2(int(room1.position.x + room1.size.x / 2), int(room1.position.y + room1.size.y / 2))
+	var point2 = Vector2(int(room2.position.x + room2.size.x / 2), int(room2.position.y + room2.size.y / 2))
+
+	while point1.x != point2.x:
+		if point1.x >= 0 and point1.x < len(dungeon_map) and point1.y >= 0 and point1.y < len(dungeon_map[point1.x]):
+			dungeon_map[point1.x][point1.y] = 0
+		point1.x += 1 if point1.x < point2.x else -1
+
+	while point1.y != point2.y:
+		if point1.x >= 0 and point1.x < len(dungeon_map) and point1.y >= 0 and point1.y < len(dungeon_map[point1.x]):
+			dungeon_map[point1.x][point1.y] = 0
+		point1.y += 1 if point1.y < point2.y else -1
+
+func is_too_close(room1: Rect2, room2: Rect2) -> bool:
+	return room1.position.distance_to(room2.position) < MIN_ROOM_DISTANCE
+
+func _draw():
+	for y in range(0, len(dungeon_map)):
+		for x in range(0, len(dungeon_map[y])):
+			var tile_position = Vector2(x * TILE_SIZE.x, y * TILE_SIZE.y)
+			if dungeon_map[y][x] == 0:
+				draw_rect(Rect2(tile_position, TILE_SIZE), Color(0.5, 0.5, 0.5))
+			else:
+				draw_rect(Rect2(tile_position, TILE_SIZE), Color(0.2, 0.2, 0.2))
+
+func _input(event):
+	if Input.is_action_just_pressed("ui_accept"):
+		# Clear the existing dungeon map and room list
+		dungeon_map.clear()
+		room_list.clear()
+
+		generate_dungeon()
+
+func rand_range(min: int, max: int) -> int:
+	return randi() % (max - min + 1) + min
