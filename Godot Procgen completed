@@ -1,0 +1,159 @@
+extends Node2D
+
+var Room = preload("res://Scenes/room.tscn")
+var hspread = 400  # horizontal spread
+var dungeon_map = []
+var tile_size = 16
+var TILE_SIZE = Vector2(16,16)  # size of a tile in the TileMap
+var num_rooms = 50  # number of rooms to generate
+var min_size = 4  # minimum room size (in tiles)
+var max_size = 10  # maximum room size (in tiles)
+var min_area = 3700
+var path
+@onready var Map = $TileMap
+
+func _ready():
+	make_rooms()
+
+func make_rooms():
+	for i in range(num_rooms):
+		var pos = Vector2(randf_range(-hspread,hspread),0)
+		var r = Room.instantiate()
+		var w = min_size + randi() % (max_size - min_size)
+		var h = min_size + randi() % (max_size - min_size)
+		r.make_room(pos, Vector2(w, h) * tile_size)
+		$Rooms.add_child(r)
+		dungeon_map.append(r)
+		
+	
+	
+	for room in dungeon_map:
+		print(room.size.x * room.size.y / 16)
+	
+	await get_tree().create_timer(1.1).timeout
+	
+	for room in $Rooms.get_children():
+			if randf() <= 0.73: #(room.size.x * room.size.y)/16 <= min_area:
+				room.queue_free()
+				dungeon_map.erase(room)
+			else:
+				room.freeze
+		
+	for i in range(0, len(dungeon_map) - 1):
+		var room1 = dungeon_map[i]
+		var room2 = dungeon_map[i + 1]
+		connect_rooms(Rect2(room1.position, room1.size), Rect2(room1.position, room1.size))
+		connect_Astar()
+		
+		
+func connect_rooms(room1: Rect2, room2: Rect2):
+	var point1 = Vector2(int(room1.position.x + room1.size.x / 2), int(room1.position.y + room1.size.y / 2))
+	var point2 = Vector2(int(room2.position.x + room2.size.x / 2), int(room2.position.y + room2.size.y / 2))
+
+	while point1.x != point2.x:
+		if point1.x >= 0 and point1.x < len(dungeon_map) and point1.y >= 0 and point1.y < len(dungeon_map[point1.x]):
+			dungeon_map[point1.x][point1.y] = 0
+		point1.x += 1 if point1.x < point2.x else -1
+
+	while point1.y != point2.y:
+		if point1.x >= 0 and point1.x < len(dungeon_map) and point1.y >= 0 and point1.y < len(dungeon_map[point1.x]):
+			dungeon_map[point1.x][point1.y] = 0
+		point1.y += 1 if point1.y < point2.y else -1
+
+func connect_Astar():
+	path = AStar2D.new()
+	for i in range(len(dungeon_map) - 1):
+		var room1 = dungeon_map[i]
+		var room2 = dungeon_map[i + 1]
+		var point1 = Vector2(int(room1.position.x + room1.size.x / 2), int(room1.position.y + room1.size.y / 2))
+		var point2 = Vector2(int(room2.position.x + room2.size.x / 2), int(room2.position.y + room2.size.y / 2))
+		print(point1,point2)
+		var n = path.get_available_point_id()
+		path.add_point(n,point1)
+		var m = path.get_available_point_id()
+		path.add_point(m,point2)
+		path.connect_points(m,n)
+
+func make_map():
+	# Creates a TileMap from the generated rooms & path
+	# find_start_room()
+	# find_end_room()
+	Map.clear()
+
+	# Fill TileMap with walls and carve out empty spaces
+	var full_rect = Rect2()
+	for room in $Rooms.get_children():
+		var r = Rect2(room.position-room.size,
+		room.get_node("CollisionShape2D").shape.extents*2)
+		full_rect = full_rect.merge(r)
+	var topleft = Map.local_to_map(full_rect.position)#world_to_map(full_rect.position)
+	var bottomright = Map.local_to_map(full_rect.end)
+	for x in range(topleft.x, bottomright.x):
+		for y in range(topleft.y, bottomright.y):
+			Map.set_cell(0,Vector2i(x,y),0,Vector2i(0,2),0)
+
+	#Carve rooms and corridors
+	var corridors = []  # One corridor per connection
+	for room in $Rooms.get_children():
+		var s = (room.size / tile_size).floor()
+		var pos = Map.local_to_map(room.position)
+		var ul = (room.position/tile_size).floor() - s
+		for x in range(2, s.x * 2-1):
+			for y in range(2, s.y * 2-1):
+				Map.set_cell(0,Vector2i(ul.x+x, ul.y+y),0,Vector2i(1,1),0)
+
+		# Carve corridors
+		var p = path.get_closest_point(Vector2(room.position.x,room.position.y), false)
+		for conn in path.get_point_connections(p):
+			if not conn in corridors:
+				var start = Map.local_to_map(Vector2(path.get_point_position(p).x, path.get_point_position(p).y))
+				var end = Map.local_to_map(Vector2(path.get_point_position(conn).x, path.get_point_position(conn).y))
+				carve_path(start, end)
+				corridors.append(p)
+
+
+func carve_path(pos1, pos2):
+	# Carves a path between two points
+	var x_diff = sign(pos2.x - pos1.x)
+	var y_diff = sign(pos2.y - pos1.y)
+	if x_diff == 0: x_diff = pow(-1.0, randi() % 2)
+	if y_diff == 0: y_diff = pow(-1.0, randi() % 2)
+	# Carve either x/y or y/x
+	var x_y = pos1
+	var y_x = pos2
+	if (randi() % 2) > 0:
+		x_y = pos2
+		y_x = pos1
+	for x in range(pos1.x, pos2.x, x_diff):
+		Map.set_cell(0,Vector2i(x, x_y.y),0,Vector2i(3,5),0)
+		Map.set_cell(0,Vector2i(x, x_y.y+y_diff),0,Vector2i(3,5),0)  # widen the corridor
+	for y in range(pos1.y, pos2.y, y_diff):
+		Map.set_cell(0,Vector2i(y_x.x, y),0,Vector2i(3,5),0)
+		Map.set_cell(0,Vector2i(y_x.x+x_diff, y),0,Vector2i(3,5),0)  # widen the corridor
+
+func draw_rooms():
+	for room in dungeon_map:
+		draw_rect(Rect2(room.position -  room.size, room.size * 2), Color.GREEN_YELLOW, false)
+
+
+func draw_connections():
+	if path:
+		for p in path.get_point_ids():
+			for c in path.get_point_connections(p):
+				var pp = path.get_point_position(p)
+				var cp = path.get_point_position(c)
+				draw_line(Vector2(pp.x, pp.y),Vector2(cp.x, cp.y),Color(1, 1, 0, 1), 15, true)
+
+func _input(event):
+	if Input.is_action_just_pressed("ui_accept"):
+		make_map()
+
+func _draw():
+	#draw_connections()
+	#draw_rooms()
+	pass
+
+func _process(delta):
+	queue_redraw()
+
+
